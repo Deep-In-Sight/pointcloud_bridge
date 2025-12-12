@@ -2,6 +2,7 @@
 #include <fstream>
 #include <vector>
 #include <filesystem>
+#include <chrono>
 #include <Eigen/Dense>
 
 #include <pointcloud_bridge/writers.hpp>
@@ -242,6 +243,176 @@ TEST_F(WriterTest, LargePointCloud) {
       EXPECT_EQ(count, 1000);
       break;
     }
+  }
+}
+
+// Helper function to get current RSS memory in MB
+double get_memory_usage_mb() {
+  std::ifstream status("/proc/self/status");
+  std::string line;
+  while (std::getline(status, line)) {
+    if (line.find("VmRSS:") == 0) {
+      // Extract memory value in kB
+      std::string mem_str = line.substr(6);  // Skip "VmRSS:"
+      mem_str.erase(0, mem_str.find_first_not_of(" \t"));
+      mem_str.erase(mem_str.find_last_not_of(" \tkB\r\n") + 1);
+      long memory_kb = std::stol(mem_str);
+      return memory_kb / 1024.0;  // Convert to MB
+    }
+  }
+  return 0.0;
+}
+
+// Performance test for streaming writes
+TEST_F(WriterTest, StreamingPerformance) {
+  const int num_points = 100000;  // 100K points
+
+  std::cout << "\n=== Streaming Performance Test ===\n";
+  std::cout << "Writing " << num_points << " points per format\n";
+  std::cout << "Expected data size: " << (num_points * 12.0 / (1024.0 * 1024.0)) << " MB (raw point data)\n\n";
+
+  // Test PLY writer
+  {
+    std::string filename = test_dir_ + "/perf_test.ply";
+    double mem_before = get_memory_usage_mb();
+
+    StreamingPLYWriter writer;
+    writer.open(filename);
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    for (int i = 0; i < num_points; ++i) {
+      Eigen::Vector3f point(i * 0.001f, i * 0.002f, i * 0.003f);
+      writer.write_point(point);
+    }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    writer.close();
+
+    double mem_after = get_memory_usage_mb();
+    double duration_sec = std::chrono::duration<double>(end - start).count();
+    double throughput_points_per_sec = num_points / duration_sec;
+    double throughput_mb_per_sec = (num_points * 12.0 / (1024.0 * 1024.0)) / duration_sec;
+    double mem_increase = mem_after - mem_before;
+
+    std::cout << "PLY Writer Performance:\n";
+    std::cout << "  Duration: " << duration_sec << " seconds\n";
+    std::cout << "  Throughput: " << throughput_points_per_sec << " points/sec\n";
+    std::cout << "  Throughput: " << throughput_mb_per_sec << " MB/sec\n";
+    std::cout << "  Memory increase: " << mem_increase << " MB\n";
+    std::cout << "  File size: " << (fs::file_size(filename) / (1024.0 * 1024.0)) << " MB\n\n";
+
+    // Verify reasonable performance (at least 10K points/sec)
+    EXPECT_GT(throughput_points_per_sec, 10000.0);
+    // Verify memory usage is reasonable (less than 50MB increase for streaming)
+    EXPECT_LT(mem_increase, 50.0);
+  }
+
+  // Test PCD writer
+  {
+    std::string filename = test_dir_ + "/perf_test.pcd";
+    double mem_before = get_memory_usage_mb();
+
+    StreamingPCDWriter writer;
+    writer.open(filename);
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    for (int i = 0; i < num_points; ++i) {
+      Eigen::Vector3f point(i * 0.001f, i * 0.002f, i * 0.003f);
+      writer.write_point(point);
+    }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    writer.close();
+
+    double mem_after = get_memory_usage_mb();
+    double duration_sec = std::chrono::duration<double>(end - start).count();
+    double throughput_points_per_sec = num_points / duration_sec;
+    double throughput_mb_per_sec = (num_points * 12.0 / (1024.0 * 1024.0)) / duration_sec;
+    double mem_increase = mem_after - mem_before;
+
+    std::cout << "PCD Writer Performance:\n";
+    std::cout << "  Duration: " << duration_sec << " seconds\n";
+    std::cout << "  Throughput: " << throughput_points_per_sec << " points/sec\n";
+    std::cout << "  Throughput: " << throughput_mb_per_sec << " MB/sec\n";
+    std::cout << "  Memory increase: " << mem_increase << " MB\n";
+    std::cout << "  File size: " << (fs::file_size(filename) / (1024.0 * 1024.0)) << " MB\n\n";
+
+    EXPECT_GT(throughput_points_per_sec, 10000.0);
+    EXPECT_LT(mem_increase, 50.0);
+  }
+
+  // Test LAS writer
+  {
+    std::string filename = test_dir_ + "/perf_test.las";
+    double mem_before = get_memory_usage_mb();
+
+    StreamingLASWriter writer;
+    writer.open(filename);
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    for (int i = 0; i < num_points; ++i) {
+      Eigen::Vector3f point(i * 0.001f, i * 0.002f, i * 0.003f);
+      writer.write_point(point);
+    }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    writer.close();
+
+    double mem_after = get_memory_usage_mb();
+    double duration_sec = std::chrono::duration<double>(end - start).count();
+    double throughput_points_per_sec = num_points / duration_sec;
+    double throughput_mb_per_sec = (num_points * 12.0 / (1024.0 * 1024.0)) / duration_sec;
+    double mem_increase = mem_after - mem_before;
+
+    std::cout << "LAS Writer Performance:\n";
+    std::cout << "  Duration: " << duration_sec << " seconds\n";
+    std::cout << "  Throughput: " << throughput_points_per_sec << " points/sec\n";
+    std::cout << "  Throughput: " << throughput_mb_per_sec << " MB/sec\n";
+    std::cout << "  Memory increase: " << mem_increase << " MB\n";
+    std::cout << "  File size: " << (fs::file_size(filename) / (1024.0 * 1024.0)) << " MB\n\n";
+
+    EXPECT_GT(throughput_points_per_sec, 10000.0);
+    EXPECT_LT(mem_increase, 50.0);
+  }
+
+  // Test LAZ writer (compressed, may be slower)
+  {
+    std::string filename = test_dir_ + "/perf_test.laz";
+    double mem_before = get_memory_usage_mb();
+
+    StreamingLAZWriter writer;
+    writer.open(filename);
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    for (int i = 0; i < num_points; ++i) {
+      Eigen::Vector3f point(i * 0.001f, i * 0.002f, i * 0.003f);
+      writer.write_point(point);
+    }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    writer.close();
+
+    double mem_after = get_memory_usage_mb();
+    double duration_sec = std::chrono::duration<double>(end - start).count();
+    double throughput_points_per_sec = num_points / duration_sec;
+    double throughput_mb_per_sec = (num_points * 12.0 / (1024.0 * 1024.0)) / duration_sec;
+    double mem_increase = mem_after - mem_before;
+
+    std::cout << "LAZ Writer Performance:\n";
+    std::cout << "  Duration: " << duration_sec << " seconds\n";
+    std::cout << "  Throughput: " << throughput_points_per_sec << " points/sec\n";
+    std::cout << "  Throughput: " << throughput_mb_per_sec << " MB/sec\n";
+    std::cout << "  Memory increase: " << mem_increase << " MB\n";
+    std::cout << "  File size: " << (fs::file_size(filename) / (1024.0 * 1024.0)) << " MB\n";
+    std::cout << "  Compression ratio: " << ((num_points * 12.0) / fs::file_size(filename)) << "x\n\n";
+
+    // LAZ may be slower due to compression, so lower threshold
+    EXPECT_GT(throughput_points_per_sec, 5000.0);
+    EXPECT_LT(mem_increase, 50.0);
   }
 }
 
