@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>pointcloud_bridge</name>
+  <version>1.0.0</version>
+  <description>WebSocket bridge for streaming ROS2 point cloud data to Electron frontend</description>
+  <maintainer email="lnlinh93@dinsight.ai">LNLINH</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
+
+  <build_depend>libprotobuf-dev</build_depend>
+  <build_depend>protobuf-compiler</build_depend>
+  <build_depend>libwebsocketpp-dev</build_depend>
+  <build_depend>libboost-system-dev</build_depend>
+  <build_depend>libasio-dev</build_depend>
+  <build_depend>libeigen3-dev</build_depend>
+  <build_depend>libpdal-dev</build_depend>
+
+  <exec_depend>libprotobuf-dev</exec_depend>
+  <exec_depend>libboost-system-dev</exec_depend>
+  <exec_depend>libpdal-dev</exec_depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

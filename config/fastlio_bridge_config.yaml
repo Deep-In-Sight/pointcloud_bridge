@@ -1,0 +1,12 @@
+# pointcloud_bridge configuration for Fast-LIO integration
+bridge_node:
+  ros__parameters:
+    # WebSocket server settings
+    websocket_port: 8765
+
+    # Subscribe to Fast-LIO outputs
+    pointcloud_topic: "/cloud_registered_body"
+    pose_topic: "/Odometry"
+
+    # Fast-LIO publishes nav_msgs/Odometry
+    pose_type: 0

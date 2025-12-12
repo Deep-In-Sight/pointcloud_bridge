@@ -1,0 +1,12 @@
+# pointcloud_bridge configuration
+bridge_node:
+  ros__parameters:
+    # WebSocket server settings
+    websocket_port: 8765
+
+    # Topic configuration
+    pointcloud_topic: "/lidar"
+    pose_topic: "/pose"  # Set to empty string ("") to disable pose
+
+    # Pose message type (0 = nav_msgs::msg::Odometry, 1 = geometry_msgs::msg::PoseStamped)
+    pose_type: 1
