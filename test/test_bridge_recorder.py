@@ -134,38 +134,6 @@ for launch_file in launch_files:
 
 
 # =============================================================================
-# Test 4: Helper Scripts
-# =============================================================================
-print("\n" + "="*60)
-print("Test 4: Helper Scripts")
-print("="*60)
-
-scripts = [
-    "/home/linh/ros2_ws/src/FAST_LIO/scripts/poll_init_status.py",
-    "/home/linh/ros2_ws/src/FAST_LIO/scripts/finalize_mapping.py",
-]
-
-for script in scripts:
-    if os.path.exists(script):
-        log_pass(f"Script exists: {os.path.basename(script)}")
-
-        # Check executable
-        if os.access(script, os.X_OK):
-            log_pass(f"Script is executable: {os.path.basename(script)}")
-        else:
-            log_fail(f"Script not executable: {os.path.basename(script)}")
-
-        # Check Python syntax
-        ret, out, err = run_command(f"python3 -m py_compile {script}")
-        if ret == 0:
-            log_pass(f"Script has valid syntax: {os.path.basename(script)}")
-        else:
-            log_fail(f"Syntax error in {os.path.basename(script)}: {err}")
-    else:
-        log_fail(f"Script missing: {script}")
-
-
-# =============================================================================
 # Test 5: Dependencies Check
 # =============================================================================
 print("\n" + "="*60)

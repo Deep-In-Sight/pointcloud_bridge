@@ -14,6 +14,8 @@ find_package(nav_msgs REQUIRED)
 find_package(Protobuf REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system iostreams program_options thread)
 find_package(Eigen3 REQUIRED)
+find_package(PCL REQUIRED COMPONENTS common)
+find_package(pcl_conversions REQUIRED)
 
 include(ExternalProject)
 
@@ -121,8 +123,59 @@ ament_target_dependencies(recorder_node
   nav_msgs
 )
 
+# Optimized recorder node (with PCL, async I/O)
+add_executable(recorder_node_optimized
+  src/recorder_node_optimized.cpp
+)
+
+target_include_directories(recorder_node_optimized PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+  ${EIGEN3_INCLUDE_DIRS}
+  ${LIBLAS_INCLUDE_DIR}
+  ${LAZPERF_INCLUDE_DIR}
+  ${PCL_INCLUDE_DIRS}
+)
+
+target_link_libraries(recorder_node_optimized
+  Eigen3::Eigen
+  ${LIBLAS_LIBRARY}
+  ${LAZPERF_LIBRARY}
+  ${PCL_LIBRARIES}
+  Boost::system
+  Boost::iostreams
+  Boost::program_options
+  Boost::thread
+  pthread
+)
+
+add_dependencies(recorder_node_optimized lazperf_external liblas_external)
+
+ament_target_dependencies(recorder_node_optimized
+  rclcpp
+  sensor_msgs
+  geometry_msgs
+  nav_msgs
+  pcl_conversions
+)
+
 # Install targets
-install(TARGETS bridge_node recorder_node
+# Install external libraries (liblas, lazperf) to package lib directory
+install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/liblas_install/lib/
+  DESTINATION lib
+  FILES_MATCHING PATTERN "*.so*"
+)
+install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/lazperf_install/lib/
+  DESTINATION lib
+  FILES_MATCHING PATTERN "*.so*"
+)
+
+install(TARGETS bridge_node recorder_node recorder_node_optimized
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+# Install Python scripts
+install(PROGRAMS
+  scripts/perf_test.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -172,6 +225,41 @@ if(BUILD_TESTING)
     sensor_msgs
     geometry_msgs
     nav_msgs
+  )
+
+  # Benchmark tests (with PCL)
+  ament_add_gtest(benchmark_operations
+    test/benchmark_operations.cpp
+  )
+
+  target_include_directories(benchmark_operations PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${EIGEN3_INCLUDE_DIRS}
+    ${LIBLAS_INCLUDE_DIR}
+    ${LAZPERF_INCLUDE_DIR}
+    ${PCL_INCLUDE_DIRS}
+  )
+
+  target_link_libraries(benchmark_operations
+    Eigen3::Eigen
+    ${LIBLAS_LIBRARY}
+    ${LAZPERF_LIBRARY}
+    ${PCL_LIBRARIES}
+    Boost::system
+    Boost::iostreams
+    Boost::program_options
+    Boost::thread
+    pthread
+  )
+
+  add_dependencies(benchmark_operations lazperf_external liblas_external)
+
+  ament_target_dependencies(benchmark_operations
+    rclcpp
+    sensor_msgs
+    geometry_msgs
+    nav_msgs
+    pcl_conversions
   )
 endif()
 
