@@ -6,6 +6,7 @@
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 #include <pcl_conversions/pcl_conversions.h>
+#include <pcl/filters/filter.h>
 
 #include <mutex>
 #include <atomic>
@@ -113,6 +114,10 @@ private:
     // Fast PCL conversion
     auto cloud = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
     pcl::fromROSMsg(*msg, *cloud);
+
+    // Remove NaN points
+    std::vector<int> indices;
+    pcl::removeNaNFromPointCloud(*cloud, *cloud, indices);
 
     // Store current pose in cloud's sensor fields
     if (enable_transform_) {
