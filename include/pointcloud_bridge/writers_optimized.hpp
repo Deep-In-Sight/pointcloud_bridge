@@ -84,7 +84,7 @@ public:
   bool close() override {
     if (!file_.is_open()) return false;
     file_.flush();
-    file_.seekp(52);
+    file_.seekp(51);
     char count_str[11];
     snprintf(count_str, sizeof(count_str), "%010zu", total_points_);
     file_.write(count_str, 10);

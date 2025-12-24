@@ -56,10 +56,10 @@ public:
 
     // Calculate position of vertex count
     // "ply\n" = 4 bytes
-    // "format binary_little_endian 1.0\n" = 33 bytes
+    // "format binary_little_endian 1.0\n" = 32 bytes
     // "element vertex " = 15 bytes
-    // Total = 52 bytes (position of count)
-    file_.seekp(52);
+    // Total = 51 bytes (position of count)
+    file_.seekp(51);
     char count_str[11];
     snprintf(count_str, sizeof(count_str), "%010zu", total_points_);
     file_.write(count_str, 10);
