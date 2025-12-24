@@ -14,7 +14,7 @@ find_package(nav_msgs REQUIRED)
 find_package(Protobuf REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system iostreams program_options thread)
 find_package(Eigen3 REQUIRED)
-find_package(PCL REQUIRED COMPONENTS common)
+find_package(PCL REQUIRED COMPONENTS common filters)
 find_package(pcl_conversions REQUIRED)
 
 include(ExternalProject)
