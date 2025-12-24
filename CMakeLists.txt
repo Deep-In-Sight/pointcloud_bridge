@@ -91,39 +91,7 @@ ament_target_dependencies(bridge_node
   nav_msgs
 )
 
-# Recorder node executable
-add_executable(recorder_node
-  src/recorder_node.cpp
-)
-
-target_include_directories(recorder_node PRIVATE
-  ${CMAKE_CURRENT_SOURCE_DIR}/include
-  ${EIGEN3_INCLUDE_DIRS}
-  ${LIBLAS_INCLUDE_DIR}
-  ${LAZPERF_INCLUDE_DIR}
-)
-
-target_link_libraries(recorder_node
-  Eigen3::Eigen
-  ${LIBLAS_LIBRARY}
-  ${LAZPERF_LIBRARY}
-  Boost::system
-  Boost::iostreams
-  Boost::program_options
-  Boost::thread
-)
-
-# Make sure external projects are built before recorder_node
-add_dependencies(recorder_node lazperf_external liblas_external)
-
-ament_target_dependencies(recorder_node
-  rclcpp
-  sensor_msgs
-  geometry_msgs
-  nav_msgs
-)
-
-# Optimized recorder node (with PCL, async I/O)
+# Recorder node (with PCL, async I/O)
 add_executable(recorder_node_optimized
   src/recorder_node_optimized.cpp
 )
@@ -169,7 +137,7 @@ install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/lazperf_install/lib/
   FILES_MATCHING PATTERN "*.so*"
 )
 
-install(TARGETS bridge_node recorder_node recorder_node_optimized
+install(TARGETS bridge_node recorder_node_optimized
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -206,16 +174,19 @@ if(BUILD_TESTING)
     ${EIGEN3_INCLUDE_DIRS}
     ${LIBLAS_INCLUDE_DIR}
     ${LAZPERF_INCLUDE_DIR}
+    ${PCL_INCLUDE_DIRS}
   )
 
   target_link_libraries(test_writers
     Eigen3::Eigen
     ${LIBLAS_LIBRARY}
     ${LAZPERF_LIBRARY}
+    ${PCL_LIBRARIES}
     Boost::system
     Boost::iostreams
     Boost::program_options
     Boost::thread
+    pthread
   )
 
   add_dependencies(test_writers lazperf_external liblas_external)
@@ -225,6 +196,7 @@ if(BUILD_TESTING)
     sensor_msgs
     geometry_msgs
     nav_msgs
+    pcl_conversions
   )
 
   # Benchmark tests (with PCL)

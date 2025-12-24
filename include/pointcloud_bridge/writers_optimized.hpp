@@ -12,6 +12,7 @@
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 #include <pcl/common/transforms.h>
+#include <pcl/filters/filter.h>
 
 // libLAS for LAS writing
 #include <liblas/liblas.hpp>
@@ -316,6 +317,20 @@ private:
 
       if (cloud && !cloud->empty()) {
         auto total_start = std::chrono::high_resolution_clock::now();
+
+        // Remove NaN/Inf points before transformation
+        pcl::PointCloud<pcl::PointXYZ>::Ptr filtered_cloud(new pcl::PointCloud<pcl::PointXYZ>());
+        filtered_cloud->reserve(cloud->size());
+        for (const auto& pt : cloud->points) {
+          if (std::isfinite(pt.x) && std::isfinite(pt.y) && std::isfinite(pt.z)) {
+            filtered_cloud->push_back(pt);
+          }
+        }
+        filtered_cloud->sensor_origin_ = cloud->sensor_origin_;
+        filtered_cloud->sensor_orientation_ = cloud->sensor_orientation_;
+        cloud = filtered_cloud;
+
+        if (cloud->empty()) continue;
 
         size_t num_points = cloud->size();
 
