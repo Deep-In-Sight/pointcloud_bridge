@@ -4,8 +4,10 @@ bridge_node:
     # WebSocket server settings
     websocket_port: 8765
 
-    # Subscribe to Fast-LIO outputs
-    pointcloud_topic: "/cloud_registered_body"
+    # Subscribe to Fast-LIO world-frame pointcloud
+    pointcloud_topic: "/cloud_registered"
+
+    # Pose topic for getLatestPose command
     pose_topic: "/Odometry"
 
     # Fast-LIO publishes nav_msgs/Odometry

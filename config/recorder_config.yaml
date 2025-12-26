@@ -2,11 +2,8 @@
 recorder_node:
   ros__parameters:
     # Topic configuration
-    pointcloud_topic: "/lidar"
-    pose_topic: "/pose"  # Set to empty string ("") to record in sensor frame
-
-    # Pose message type (0 = nav_msgs::msg::Odometry, 1 = geometry_msgs::msg::PoseStamped)
-    pose_type: 1
+    # Pointcloud is expected in world frame (no transformation needed)
+    pointcloud_topic: "/cloud_registered"
 
     # Output configuration
     artifact_dir: "/tmp"

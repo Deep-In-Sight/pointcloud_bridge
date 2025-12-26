@@ -33,12 +33,23 @@ message SensorPose {
   float qw = 7;
 }
 
-message PointChunk {
+message PointCloudData {
   uint32 num_points = 1;
-  SensorPose sensor_pose = 2;
-  bytes point_data = 3;
-  uint64 timestamp = 4;
-  uint32 sequence = 5;
+  bytes point_data = 2;
+  uint64 timestamp = 3;
+  uint32 sequence = 4;
+}
+
+message PoseData {
+  SensorPose pose = 1;
+  uint64 timestamp = 2;
+}
+
+message StreamMessage {
+  oneof payload {
+    PointCloudData points = 1;
+    PoseData pose = 2;
+  }
 }
 )";
 
@@ -49,9 +60,9 @@ public:
   BridgeNode() : Node("pointcloud_bridge") {
     // Declare parameters
     this->declare_parameter("websocket_port", 8765);
-    this->declare_parameter("pointcloud_topic", "/lidar");
+    this->declare_parameter("pointcloud_topic", "/cloud_registered");
     this->declare_parameter("pose_topic", "");
-    this->declare_parameter("pose_type", 1);  // 0 = Odometry, 1 = PoseStamped
+    this->declare_parameter("pose_type", 0);  // 0 = Odometry, 1 = PoseStamped
 
     int port = this->get_parameter("websocket_port").as_int();
     std::string pointcloud_topic = this->get_parameter("pointcloud_topic").as_string();
@@ -59,7 +70,7 @@ public:
     int pose_type = this->get_parameter("pose_type").as_int();
 
     RCLCPP_INFO(this->get_logger(), "Starting WebSocket bridge on port %d", port);
-    RCLCPP_INFO(this->get_logger(), "Subscribing to pointcloud: %s", pointcloud_topic.c_str());
+    RCLCPP_INFO(this->get_logger(), "Subscribing to pointcloud: %s (world frame)", pointcloud_topic.c_str());
 
     // Create pointcloud subscriber
     lidar_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
@@ -87,7 +98,7 @@ public:
         RCLCPP_ERROR(this->get_logger(), "Invalid pose_type: %d (must be 0 or 1)", pose_type);
       }
     } else {
-      RCLCPP_INFO(this->get_logger(), "Pose topic not configured, running without pose data");
+      RCLCPP_INFO(this->get_logger(), "Pose topic not configured, getLatestPose will return empty");
     }
 
     // Initialize WebSocket server
@@ -133,16 +144,16 @@ public:
 
 private:
   void lidar_callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
-    std::lock_guard<std::mutex> lock(data_mutex_);
+    std::lock_guard<std::mutex> lock(pointcloud_mutex_);
     latest_pointcloud_ = msg;
     has_new_pointcloud_ = true;
-    sequence_++;
+    pointcloud_sequence_++;
     RCLCPP_DEBUG(this->get_logger(), "Received pointcloud with %u points",
                  msg->width * msg->height);
   }
 
   void pose_stamped_callback(const geometry_msgs::msg::PoseStamped::SharedPtr msg) {
-    std::lock_guard<std::mutex> lock(data_mutex_);
+    std::lock_guard<std::mutex> lock(pose_mutex_);
     latest_position_[0] = msg->pose.position.x;
     latest_position_[1] = msg->pose.position.y;
     latest_position_[2] = msg->pose.position.z;
@@ -150,13 +161,14 @@ private:
     latest_orientation_[1] = msg->pose.orientation.y;
     latest_orientation_[2] = msg->pose.orientation.z;
     latest_orientation_[3] = msg->pose.orientation.w;
+    pose_timestamp_ = msg->header.stamp.sec * 1000000000ULL + msg->header.stamp.nanosec;
     has_pose_ = true;
     RCLCPP_DEBUG(this->get_logger(), "Received PoseStamped: [%.2f, %.2f, %.2f]",
                  msg->pose.position.x, msg->pose.position.y, msg->pose.position.z);
   }
 
   void odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg) {
-    std::lock_guard<std::mutex> lock(data_mutex_);
+    std::lock_guard<std::mutex> lock(pose_mutex_);
     latest_position_[0] = msg->pose.pose.position.x;
     latest_position_[1] = msg->pose.pose.position.y;
     latest_position_[2] = msg->pose.pose.position.z;
@@ -164,6 +176,7 @@ private:
     latest_orientation_[1] = msg->pose.pose.orientation.y;
     latest_orientation_[2] = msg->pose.pose.orientation.z;
     latest_orientation_[3] = msg->pose.pose.orientation.w;
+    pose_timestamp_ = msg->header.stamp.sec * 1000000000ULL + msg->header.stamp.nanosec;
     has_pose_ = true;
     RCLCPP_DEBUG(this->get_logger(), "Received Odometry: [%.2f, %.2f, %.2f]",
                  msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z);
@@ -193,17 +206,21 @@ private:
         RCLCPP_ERROR(this->get_logger(), "Failed to send schema: %s", e.what());
       }
     }
-    else if (payload == "getLatestChunk") {
-      // Send latest point chunk as binary
-      send_latest_chunk(hdl);
+    else if (payload == "getLatestPoints") {
+      // Send latest pointcloud wrapped in StreamMessage
+      send_latest_points(hdl);
+    }
+    else if (payload == "getLatestPose") {
+      // Send latest pose wrapped in StreamMessage
+      send_latest_pose(hdl);
     }
     else {
       RCLCPP_WARN(this->get_logger(), "Unknown command: %s", payload.c_str());
     }
   }
 
-  void send_latest_chunk(connection_hdl hdl) {
-    std::lock_guard<std::mutex> lock(data_mutex_);
+  void send_latest_points(connection_hdl hdl) {
+    std::lock_guard<std::mutex> lock(pointcloud_mutex_);
 
     if (!has_new_pointcloud_ || !latest_pointcloud_) {
       // Send empty response if no new data
@@ -213,20 +230,9 @@ private:
       return;
     }
 
-    // Build PointChunk message
-    pointcloud::PointChunk chunk;
-
-    // Set pose if available
-    if (has_pose_) {
-      auto* pose = chunk.mutable_sensor_pose();
-      pose->set_px(latest_position_[0]);
-      pose->set_py(latest_position_[1]);
-      pose->set_pz(latest_position_[2]);
-      pose->set_qx(latest_orientation_[0]);
-      pose->set_qy(latest_orientation_[1]);
-      pose->set_qz(latest_orientation_[2]);
-      pose->set_qw(latest_orientation_[3]);
-    }
+    // Build StreamMessage with PointCloudData
+    pointcloud::StreamMessage stream_msg;
+    auto* points_data = stream_msg.mutable_points();
 
     // Extract points from PointCloud2
     std::vector<float> point_data;
@@ -250,33 +256,73 @@ private:
 
     // Update actual point count after filtering NaN
     num_points = point_data.size() / 3;
-    chunk.set_num_points(num_points);
+    points_data->set_num_points(num_points);
 
     // Set point data as bytes
-    chunk.set_point_data(point_data.data(), point_data.size() * sizeof(float));
+    points_data->set_point_data(point_data.data(), point_data.size() * sizeof(float));
 
     // Set timestamp and sequence
-    chunk.set_timestamp(
+    points_data->set_timestamp(
       latest_pointcloud_->header.stamp.sec * 1000000000ULL +
       latest_pointcloud_->header.stamp.nanosec
     );
-    chunk.set_sequence(sequence_);
+    points_data->set_sequence(pointcloud_sequence_);
 
     // Mark as consumed
     has_new_pointcloud_ = false;
 
     // Serialize and send
     std::string serialized;
-    if (chunk.SerializeToString(&serialized)) {
+    if (stream_msg.SerializeToString(&serialized)) {
       try {
         ws_server_.send(hdl, serialized, websocketpp::frame::opcode::binary);
-        RCLCPP_DEBUG(this->get_logger(), "Sent chunk with %u points, seq=%u",
-                     num_points, sequence_.load());
+        RCLCPP_DEBUG(this->get_logger(), "Sent points with %u points, seq=%u",
+                     num_points, pointcloud_sequence_.load());
       } catch (const std::exception& e) {
-        RCLCPP_ERROR(this->get_logger(), "Failed to send chunk: %s", e.what());
+        RCLCPP_ERROR(this->get_logger(), "Failed to send points: %s", e.what());
       }
     } else {
-      RCLCPP_ERROR(this->get_logger(), "Failed to serialize PointChunk");
+      RCLCPP_ERROR(this->get_logger(), "Failed to serialize StreamMessage");
+    }
+  }
+
+  void send_latest_pose(connection_hdl hdl) {
+    std::lock_guard<std::mutex> lock(pose_mutex_);
+
+    if (!has_pose_) {
+      // Send empty response if no pose data
+      try {
+        ws_server_.send(hdl, "", websocketpp::frame::opcode::binary);
+      } catch (...) {}
+      return;
+    }
+
+    // Build StreamMessage with PoseData
+    pointcloud::StreamMessage stream_msg;
+    auto* pose_data = stream_msg.mutable_pose();
+    auto* pose = pose_data->mutable_pose();
+
+    pose->set_px(latest_position_[0]);
+    pose->set_py(latest_position_[1]);
+    pose->set_pz(latest_position_[2]);
+    pose->set_qx(latest_orientation_[0]);
+    pose->set_qy(latest_orientation_[1]);
+    pose->set_qz(latest_orientation_[2]);
+    pose->set_qw(latest_orientation_[3]);
+    pose_data->set_timestamp(pose_timestamp_);
+
+    // Serialize and send
+    std::string serialized;
+    if (stream_msg.SerializeToString(&serialized)) {
+      try {
+        ws_server_.send(hdl, serialized, websocketpp::frame::opcode::binary);
+        RCLCPP_DEBUG(this->get_logger(), "Sent pose: [%.2f, %.2f, %.2f]",
+                     latest_position_[0], latest_position_[1], latest_position_[2]);
+      } catch (const std::exception& e) {
+        RCLCPP_ERROR(this->get_logger(), "Failed to send pose: %s", e.what());
+      }
+    } else {
+      RCLCPP_ERROR(this->get_logger(), "Failed to serialize StreamMessage");
     }
   }
 
@@ -291,14 +337,18 @@ private:
   std::mutex conn_mutex_;
   std::set<connection_hdl, std::owner_less<connection_hdl>> connections_;
 
-  // Shared data
-  std::mutex data_mutex_;
+  // Pointcloud data (protected by pointcloud_mutex_)
+  std::mutex pointcloud_mutex_;
   sensor_msgs::msg::PointCloud2::SharedPtr latest_pointcloud_;
+  std::atomic<uint32_t> pointcloud_sequence_{0};
+  bool has_new_pointcloud_{false};
+
+  // Pose data (protected by pose_mutex_)
+  std::mutex pose_mutex_;
   float latest_position_[3] = {0.0f, 0.0f, 0.0f};
   float latest_orientation_[4] = {0.0f, 0.0f, 0.0f, 1.0f};  // Identity quaternion
+  uint64_t pose_timestamp_{0};
   bool has_pose_{false};
-  std::atomic<uint32_t> sequence_{0};
-  bool has_new_pointcloud_{false};
 };
 
 int main(int argc, char** argv) {

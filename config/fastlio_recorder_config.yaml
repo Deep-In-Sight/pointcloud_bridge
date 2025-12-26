@@ -1,12 +1,8 @@
 # pointcloud_recorder configuration for Fast-LIO integration
 recorder_node:
   ros__parameters:
-    # Subscribe to Fast-LIO outputs
-    pointcloud_topic: "/cloud_registered_body"
-    pose_topic: "/Odometry"
-
-    # Fast-LIO publishes nav_msgs/Odometry
-    pose_type: 0
+    # Subscribe to Fast-LIO world-frame pointcloud
+    pointcloud_topic: "/cloud_registered"
 
     # Output configuration (will be overridden by launch file)
     artifact_dir: "/tmp/mapping_artifact"

@@ -11,8 +11,6 @@
 
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
-#include <pcl/common/transforms.h>
-#include <pcl/filters/filter.h>
 
 // libLAS for LAS writing
 #include <liblas/liblas.hpp>
@@ -231,13 +229,11 @@ private:
 // Profiling stats for writer thread
 struct WriterStats {
   std::atomic<size_t> clouds_processed{0};
-  std::atomic<size_t> transform_time_us{0};
   std::atomic<size_t> write_time_us{0};
   std::atomic<size_t> total_time_us{0};
 
   void reset() {
     clouds_processed = 0;
-    transform_time_us = 0;
     write_time_us = 0;
     total_time_us = 0;
   }
@@ -246,16 +242,15 @@ struct WriterStats {
     size_t clouds = clouds_processed.load();
     if (clouds == 0) return;
 
-    double avg_transform_ms = (transform_time_us.load() / clouds) / 1000.0;
     double avg_write_ms = (write_time_us.load() / clouds) / 1000.0;
     double avg_total_ms = (total_time_us.load() / clouds) / 1000.0;
 
-    printf("Writer stats: %zu clouds | Avg transform: %.2f ms | Avg write: %.2f ms | Avg total: %.2f ms\n",
-           clouds, avg_transform_ms, avg_write_ms, avg_total_ms);
+    printf("Writer stats: %zu clouds | Avg write: %.2f ms | Avg total: %.2f ms\n",
+           clouds, avg_write_ms, avg_total_ms);
   }
 };
 
-// Async writer that accepts PCL clouds, transforms in background, writes to file
+// Async writer that accepts PCL clouds and writes to file (no transformation)
 class AsyncPCLWriter {
 public:
   explicit AsyncPCLWriter(std::unique_ptr<BufferedStreamingWriter> writer)
@@ -296,10 +291,6 @@ public:
 
 private:
   void writer_loop() {
-    // Pre-allocate transformed cloud and output buffer
-    pcl::PointCloud<pcl::PointXYZ> transformed_cloud;
-    transformed_cloud.reserve(500000);
-
     while (true) {
       pcl::PointCloud<pcl::PointXYZ>::Ptr cloud;
 
@@ -318,7 +309,7 @@ private:
       if (cloud && !cloud->empty()) {
         auto total_start = std::chrono::high_resolution_clock::now();
 
-        // Remove NaN/Inf points before transformation
+        // Remove NaN/Inf points
         pcl::PointCloud<pcl::PointXYZ>::Ptr filtered_cloud(new pcl::PointCloud<pcl::PointXYZ>());
         filtered_cloud->reserve(cloud->size());
         for (const auto& pt : cloud->points) {
@@ -326,52 +317,27 @@ private:
             filtered_cloud->push_back(pt);
           }
         }
-        filtered_cloud->sensor_origin_ = cloud->sensor_origin_;
-        filtered_cloud->sensor_orientation_ = cloud->sensor_orientation_;
-        cloud = filtered_cloud;
 
-        if (cloud->empty()) continue;
+        if (filtered_cloud->empty()) continue;
 
-        size_t num_points = cloud->size();
-
-        // Get transform from sensor pose
-        Eigen::Vector4f origin = cloud->sensor_origin_;
-        Eigen::Quaternionf orientation = cloud->sensor_orientation_;
-        bool has_transform = (origin.head<3>().norm() > 1e-6 ||
-                              std::abs(orientation.w() - 1.0f) > 1e-6);
-
-        auto transform_start = std::chrono::high_resolution_clock::now();
-
-        // Use PCL's optimized transform
-        const pcl::PointCloud<pcl::PointXYZ>* cloud_to_write = cloud.get();
-
-        if (has_transform) {
-          Eigen::Affine3f transform = Eigen::Translation3f(origin.head<3>()) * orientation;
-          pcl::transformPointCloud(*cloud, transformed_cloud, transform);
-          cloud_to_write = &transformed_cloud;
-        }
-
-        auto transform_end = std::chrono::high_resolution_clock::now();
+        size_t num_points = filtered_cloud->size();
 
         // Write points - PCL PointXYZ has 16-byte stride, need to extract XYZ
         auto write_start = std::chrono::high_resolution_clock::now();
 
         // Direct write - PointXYZ is [x,y,z,padding] so we can write the first 12 bytes of each
-        const float* point_data = reinterpret_cast<const float*>(cloud_to_write->points.data());
+        const float* point_data = reinterpret_cast<const float*>(filtered_cloud->points.data());
         writer_->write_points_strided(point_data, num_points, 4);  // stride=4 floats (16 bytes)
 
         auto write_end = std::chrono::high_resolution_clock::now();
 
         // Update stats
-        auto transform_us = std::chrono::duration_cast<std::chrono::microseconds>(
-          transform_end - transform_start).count();
         auto write_us = std::chrono::duration_cast<std::chrono::microseconds>(
           write_end - write_start).count();
         auto total_us = std::chrono::duration_cast<std::chrono::microseconds>(
           write_end - total_start).count();
 
         stats_.clouds_processed.fetch_add(1, std::memory_order_relaxed);
-        stats_.transform_time_us.fetch_add(transform_us, std::memory_order_relaxed);
         stats_.write_time_us.fetch_add(write_us, std::memory_order_relaxed);
         stats_.total_time_us.fetch_add(total_us, std::memory_order_relaxed);
       }

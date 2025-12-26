@@ -5,8 +5,11 @@ bridge_node:
     websocket_port: 8765
 
     # Topic configuration
-    pointcloud_topic: "/lidar"
-    pose_topic: "/pose"  # Set to empty string ("") to disable pose
+    # Pointcloud is expected in world frame (no transformation needed)
+    pointcloud_topic: "/cloud_registered"
+
+    # Pose topic for getLatestPose command (set to empty string to disable)
+    pose_topic: "/Odometry"
 
     # Pose message type (0 = nav_msgs::msg::Odometry, 1 = geometry_msgs::msg::PoseStamped)
-    pose_type: 1
+    pose_type: 0
