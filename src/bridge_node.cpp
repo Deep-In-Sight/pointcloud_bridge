@@ -124,19 +124,31 @@ public:
   }
 
   ~BridgeNode() {
-    ws_server_.stop_listening();
+    // Set shutdown flag to suppress expected errors
+    shutting_down_ = true;
 
-    // Close all connections
+    // Suppress all logging during shutdown
+    ws_server_.set_access_channels(websocketpp::log::alevel::none);
+    ws_server_.set_error_channels(websocketpp::log::elevel::none);
+
+    // Stop accepting new connections
+    websocketpp::lib::error_code ec;
+    ws_server_.stop_listening(ec);
+
+    // Close all connections gracefully
     {
       std::lock_guard<std::mutex> lock(conn_mutex_);
       for (auto& hdl : connections_) {
-        try {
-          ws_server_.close(hdl, websocketpp::close::status::going_away, "Server shutdown");
-        } catch (...) {}
+        websocketpp::lib::error_code close_ec;
+        ws_server_.close(hdl, websocketpp::close::status::going_away, "Server shutdown", close_ec);
       }
+      connections_.clear();
     }
 
+    // Stop the io_service
     ws_server_.stop();
+
+    // Wait for the WebSocket thread to finish
     if (ws_thread_.joinable()) {
       ws_thread_.join();
     }
@@ -336,6 +348,7 @@ private:
   std::thread ws_thread_;
   std::mutex conn_mutex_;
   std::set<connection_hdl, std::owner_less<connection_hdl>> connections_;
+  std::atomic<bool> shutting_down_{false};
 
   // Pointcloud data (protected by pointcloud_mutex_)
   std::mutex pointcloud_mutex_;
